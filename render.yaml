@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: telegram-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn bot:web_app -k uvicorn.workers.UvicornWorker --bind "0.0.0.0:$PORT" --workers 1 --timeout 120
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false          # set manually in Render dashboard
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: mistralai/mistral-7b-instruct:free
+      # RENDER_EXTERNAL_URL is injected automatically by Render — no need to set it
