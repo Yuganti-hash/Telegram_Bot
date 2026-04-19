@@ -158,6 +158,11 @@ async def lifespan(_app: FastAPI):
 web_app = FastAPI(lifespan=lifespan)
 
 
+@web_app.get("/")
+async def root() -> dict:
+    return {"status": "Bot is running", "endpoints": ["/health", "/webhook"]}
+
+
 @web_app.post("/webhook")
 async def webhook(request: Request) -> Response:
     data = await request.json()
