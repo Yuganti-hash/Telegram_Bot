@@ -48,22 +48,36 @@ async def get_ai_response(chat_id: int, user_text: str) -> str:
     trimmed = [history[0]] + history[-(MAX_HISTORY):]
     conversation_history[chat_id] = trimmed
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": "http://localhost",
-                "X-Title": "TelegramBot",
-            },
-            json={"model": OPENROUTER_MODEL, "messages": trimmed},
-        )
-        response.raise_for_status()
-        data = response.json()
+    delays = [2, 4, 8]  # seconds between retries (exponential backoff)
+    last_error: Exception = None
 
-    reply = data["choices"][0]["message"]["content"].strip()
-    conversation_history[chat_id].append({"role": "assistant", "content": reply})
-    return reply
+    async with httpx.AsyncClient(timeout=30) as client:
+        for attempt, delay in enumerate([0] + delays, start=1):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "HTTP-Referer": "http://localhost",
+                        "X-Title": "TelegramBot",
+                    },
+                    json={"model": OPENROUTER_MODEL, "messages": trimmed},
+                )
+                response.raise_for_status()
+                data = response.json()
+                reply = data["choices"][0]["message"]["content"].strip()
+                conversation_history[chat_id].append({"role": "assistant", "content": reply})
+                return reply
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning("Rate limited by OpenRouter (attempt %d/%d), retrying in %ds...", attempt, len(delays) + 1, delay)
+                    last_error = e
+                else:
+                    raise
+
+    raise last_error
 
 
 # ── Telegram handlers ──────────────────────────────────────────────────────────
