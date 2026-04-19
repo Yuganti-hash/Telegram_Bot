@@ -90,7 +90,7 @@ async def get_ai_response(chat_id: int, user_text: str) -> str:
 
 # ── Telegram handlers ──────────────────────────────────────────────────────────
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     conversation_history[chat_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     await update.message.reply_text(
@@ -100,7 +100,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def help_command(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Commands:\n"
         "  /start — reset conversation and say hello\n"
@@ -126,7 +126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Something went wrong. Please try again.")
 
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def error_handler(_update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Update caused error: %s", context.error)
 
 
@@ -180,7 +180,7 @@ async def lifespan(_app: FastAPI):
 web_app = FastAPI(lifespan=lifespan)
 
 
-@web_app.get("/")
+@web_app.api_route("/", methods=["GET", "HEAD"])
 async def root() -> dict:
     return {"status": "Bot is running", "endpoints": ["/health", "/webhook"]}
 
