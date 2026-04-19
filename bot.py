@@ -14,7 +14,13 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct:free")
+
+# Primary model + ordered fallbacks — all free tier
+OPENROUTER_MODELS = [
+    os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct:free"),
+    "meta-llama/llama-3-8b-instruct:free",
+    "google/gemma-3-4b-it:free",
+]
 
 # Render sets RENDER_EXTERNAL_URL automatically; fallback to manual WEBHOOK_URL
 _base_url = os.getenv("WEBHOOK_URL") or os.getenv("RENDER_EXTERNAL_URL", "")
@@ -48,13 +54,10 @@ async def get_ai_response(chat_id: int, user_text: str) -> str:
     trimmed = [history[0]] + history[-(MAX_HISTORY):]
     conversation_history[chat_id] = trimmed
 
-    delays = [2, 4, 8]  # seconds between retries (exponential backoff)
     last_error: Exception = None
 
     async with httpx.AsyncClient(timeout=30) as client:
-        for attempt, delay in enumerate([0] + delays, start=1):
-            if delay:
-                await asyncio.sleep(delay)
+        for model in OPENROUTER_MODELS:
             try:
                 response = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
@@ -63,16 +66,21 @@ async def get_ai_response(chat_id: int, user_text: str) -> str:
                         "HTTP-Referer": "http://localhost",
                         "X-Title": "TelegramBot",
                     },
-                    json={"model": OPENROUTER_MODEL, "messages": trimmed},
+                    json={"model": model, "messages": trimmed},
                 )
                 response.raise_for_status()
                 data = response.json()
                 reply = data["choices"][0]["message"]["content"].strip()
                 conversation_history[chat_id].append({"role": "assistant", "content": reply})
+                if model != OPENROUTER_MODELS[0]:
+                    logger.info("Responded using fallback model: %s", model)
                 return reply
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    logger.warning("Rate limited by OpenRouter (attempt %d/%d), retrying in %ds...", attempt, len(delays) + 1, delay)
+                    wait = int(e.response.headers.get("retry-after", 5))
+                    wait = min(wait, 30)  # cap at 30s so the bot stays responsive
+                    logger.warning("Model %s rate-limited, waiting %ds then trying next...", model, wait)
+                    await asyncio.sleep(wait)
                     last_error = e
                 else:
                     raise
